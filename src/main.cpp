@@ -12,44 +12,6 @@ int main()
 {
   time_wrapper::Timer timer{};
 
-  /*std::vector<double> in_data{ 1.0 };
-  matrices::Matrix<double> in{ 1, 1, in_data };
-  nn::Linear linear{ 1, 2 };
-  auto out = linear.forward(in);
-  matrices::util::print_elements(linear.m_weights.data);
-  matrices::util::print_elements(linear.m_bias.data);
-  matrices::util::print_elements(in.data);
-  matrices::util::print_elements(out.data);*/
-
-  /*double lr{ 0.01 };
-  std::vector<int> layers{ 5, 1 };
-  std::vector<std::string> activations{"sigmoid", "sigmoid"};
-  int input_dim = 10;
-  int batch_size = 1;
-  nn::Model nn_model{ input_dim, layers, activations };
-  std::vector<double> in_data2 = rand_wrapper::randn(batch_size *input_dim, 0, 1);
-  matrices::Matrix<double> input_chunk{ batch_size, input_dim, in_data2};
-  std::vector<int> label_data(batch_size * 1, int{ 0 });
-  matrices::Matrix<int> labels{ batch_size, 1, label_data };*/
-  
-  
-  /*auto preds = nn_model.forward(input_chunk, labels, 0, 0);
-  auto cur_loss = nn_model.m_loss_fn(preds, labels);
-  matrices::util::print_elements(cur_loss.data, " ", "cur loss: ");
-
-  std::string opt_str = "output row num: " + std::to_string(preds.get_row_num());
-  opt_str += " col num: " + std::to_string(preds.get_col_num());
-  opt_str += "\ndata: ";
-  matrices::util::print_elements(preds.data, " ", opt_str);
-
-  auto res2 = nn_model.backward(1, 0);
-  std::string opt_str2 = "output row num: " + std::to_string(res2.get_row_num());
-  opt_str2 += " col num: " + std::to_string(res2.get_col_num());
-  opt_str2 += "\ndata: ";
-  matrices::util::print_elements(res2.data, " ", opt_str2);
-  
-  nn_model.update(lr);*/
-
   double lr{ 0.01 };
   std::vector<int> layers{ 10, 10, 1 };
   std::vector<std::string> activations{ "relu", "relu", "sigmoid" };
