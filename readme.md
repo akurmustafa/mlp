@@ -13,9 +13,13 @@ TODO: add usage of the Model class
 
 Compiler should support C++17
 
+## TODO
+
+Add training demo on mnist dataset, add tanh, softmax activation
+
 ## Contributing
 
-Please read [CONTRIBUTING.md](https://gist.github.com/PurpleBooth/b24679402957c63ec426) for details on our code of conduct, and the process for submitting pull requests to us.
+You can just push your changes, I may merge it after review
 
 ## Authors
 
