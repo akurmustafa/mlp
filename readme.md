@@ -27,4 +27,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Acknowledgments
 
-* I have benefited and enjoyed a lot from [andrej karpathy's](http://karpathy.github.io/) [lectures](https://cs231n.github.io/) and [andrew ng's](https://en.wikipedia.org/wiki/Andrew_Ng) [course](https://www.coursera.org/specializations/deep-learning) course.
+* I have benefited and enjoyed a lot from [andrej karpathy's](http://karpathy.github.io/) [lectures](https://cs231n.github.io/) and [andrew ng's](https://en.wikipedia.org/wiki/Andrew_Ng) deep learning specialization [course](https://www.coursera.org/specializations/deep-learning).
