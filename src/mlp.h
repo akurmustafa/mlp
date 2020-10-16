@@ -12,18 +12,60 @@
 namespace nn {
 	namespace util {
 
+		matrices::Matrix<int> onehot_encode(matrices::Matrix<int> const& labels) {
+			assert(labels.get_col_num() == 1 && "labels should be unique for onehot encoding");
+			auto max_elem_it = std::max_element(labels.data.cbegin(), labels.data.cend());
+			int diff_label_num = *max_elem_it + 1;
+			matrices::Matrix<int> res{ labels.get_row_num(), diff_label_num };
+			for (std::size_t i = 0; i < res.get_row_num(); ++i) {
+				std::vector<int> cur_row(diff_label_num, int{ 0 });
+				cur_row[labels.data[i]] = 1;
+				res.set_row(i, cur_row);
+			}
+			return res;
+		}
+
+		namespace detail {
+			// expects binary label
+			template<typename T>
+			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels, std::true_type) {
+				int tp{ 0 };
+				for (std::size_t i = 0; i != probs.get_row_num(); ++i) {
+					int cur_pred = probs.data[i] > 0.5 ? 1 : 0;
+					if (cur_pred == labels.data[i]) {
+						++tp;
+					}
+				}
+				return 1.0 * tp / probs.get_row_num();
+			}
+
+			// expects onehot encoded vector as label
+			template<typename T>
+			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels, std::false_type) {
+				int tp{ 0 };
+				for (std::size_t i = 0; i != probs.get_row_num(); ++i) {
+					std::size_t offset = i * probs.get_col_num();
+					std::size_t offset_end = (i + 1) * probs.get_col_num();
+					auto cur_pred = std::distance(probs.data.cbegin()+ offset,
+						std::max_element(probs.data.cbegin()+offset, probs.data.cbegin()+ offset_end));
+					if (labels.data[i * labels.get_col_num() + cur_pred] == 1) {
+						++tp;
+					}
+				}
+				return 1.0 * tp / probs.get_row_num();
+			}
+		} // namespace detail
+
 		template<typename T>
 		double get_accuracy(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels) {
-			assert((probs.get_col_num() == 1 && labels.get_col_num() == 1) && "col nums should be same");
+			assert((probs.get_col_num() && labels.get_col_num()) && "col nums should be same");
 			assert(probs.get_row_num() == labels.get_row_num() && "data nums should be same");
-			int tp{ 0 };
-			for (std::size_t i = 0; i != probs.get_row_num(); ++i) {
-				int cur_pred = probs.data[i] > 0.5 ? 1 : 0;
-				if (cur_pred == labels.data[i]) {
-					++tp;
-				}
-			}
-			return 1.0 * tp / probs.get_row_num();
+			std::true_type t;
+			std::false_type f;
+			if (probs.get_col_num() == 1)
+				return detail::template get_accuracy_impl<T>(probs, labels, t);
+			else
+				return detail::template get_accuracy_impl<T>(probs, labels, f);
 		}
 
 		template<typename T>
@@ -38,6 +80,9 @@ namespace nn {
 			}
 			return res;
 		}
+
+
+		////////////// activations ///////////////
 
 		template<typename T>
 		T relu(T in) {
@@ -135,6 +180,121 @@ namespace nn {
 		}
 
 		template<typename T>
+		T tanh(T in) {
+			T tmp1 = std::exp(in);
+			T tmp2 = std::exp(-in);
+			T out = (tmp1 - tmp2) / (tmp1 + tmp2);
+			return out;
+		}
+
+		template<typename T>
+		std::vector<T> tanh(std::vector<T> const& in) {
+			std::vector<T> out(in.size(), T{ 0 });
+			auto it_out = std::begin(out);
+			for (auto it_in = std::cbegin(in); it_in != std::cend(in); ++it_in, ++it_out) {
+				*it_out = tanh<T>(*it_in);
+			}
+			return out;
+		}
+
+		template <typename T>
+		matrices::Matrix<T> tanh(matrices::Matrix<T> const& in) {
+			auto out_data = tanh<T>(in.data);
+			matrices::Matrix<T> out{ in.get_row_num(), in.get_col_num(), out_data };
+			return out;
+		}
+
+		template<typename T>
+		T d_tanh(T in) {
+			T tmp1 = tanh(in);
+			T out = (1.0 - tmp1 * tmp1);
+			return out;
+		}
+
+		template<typename T>
+		std::vector<T> d_tanh(std::vector<T> const& in) {
+			std::vector<T> out(in.size(), T{ 0 });
+			auto it_out = std::begin(out);
+			for (auto it_in = std::cbegin(in); it_in != std::cend(in); ++it_in, ++it_out) {
+				*it_out = d_tanh<T>(*it_in);
+			}
+			return out;
+		}
+
+		template <typename T>
+		matrices::Matrix<T> d_tanh(matrices::Matrix<T> const& in) {
+			auto out_data = d_tanh<T>(in.data);
+			matrices::Matrix<T> out{ in.get_row_num(), in.get_col_num(), out_data };
+			return out;
+		}
+
+		template<typename T>
+		std::vector<T> softmax(std::vector<T> const& in) {
+			std::vector<T> res(in.size(), T{ 0 });
+			res = in;
+			auto max_elem_it = std::max_element(res.begin(), res.end());
+			auto max_elem = *max_elem_it;
+			// subtract max num from each one for numerical stability
+			std::transform(res.begin(), res.end(),
+				res.begin(),
+				[max_elem](auto lhs) {return lhs - max_elem; });
+			// take exponent of each elem
+			std::transform(res.begin(), res.end(),
+				res.begin(),
+				[](auto elem) {return std::exp(elem); });
+			auto total = std::accumulate(res.begin(), res.end(), T{ 0 });
+			std::transform(res.begin(), res.end(),
+				res.begin(),
+				[total](auto elem) {return elem / total; });
+
+			return res;
+		}
+
+		template<typename T>
+		matrices::Matrix<T> softmax(matrices::Matrix<T> const& in) {
+			matrices::Matrix<T> res{ in.get_row_num(), in.get_col_num(), std::vector<T>(in.get_row_num() * in.get_col_num(), T{0}) };
+			for(std::size_t row_idx =0;row_idx<in.get_row_num();++row_idx){
+				auto cur_row = in.get_row(row_idx);
+				auto soft_max_res = softmax<T>(cur_row);
+				res.set_row(row_idx, soft_max_res);
+			}
+			return res;
+		}
+
+		template<typename T>
+		matrices::Matrix<T> d_softmax(std::vector<T> const& in) {
+			matrices::Matrix<T> res{ in.size(), in.size(), std::vector<T>(in.size() * in.size(), T{0}) };
+			for (std::size_t i = 0; i < res.get_row_num(); ++i) {
+				std::vector<T> cur_row(res.get_col_num(), T{ 0 });
+				for (std::size_t j = 0; j < res.get_col_num(); ++j) {
+					if (i == j) {
+						cur_row[j] = in[j] * (1.0 - in[j]);
+					}
+					else {
+						cur_row[j] = -in[i] * in[j];
+					}
+				}
+				res.set_row(i, cur_row);
+			}
+			return res;
+		}
+
+		template<typename T>
+		matrices::Matrix<T> d_softmax(matrices::Matrix<T> const& in) {
+			matrices::Matrix<T> res{ in.get_row_num() * in.get_col_num(), in.get_col_num() };
+			for (std::size_t i = 0; i < in.get_row_num(); ++i) {
+				auto cur_row = in.get_row(i);
+				auto cur_d_softmax = d_softmax<T>(cur_row);
+				for (std::size_t j = i; j < i + cur_d_softmax.get_row_num(); ++j) {
+					res.set_row(i, cur_row);
+				}
+			}
+			return res;
+		}
+		////////////// activations ///////////////
+
+		////////////// loss functions ////////////
+		template<typename T>
 		T cross_entropy(T in, int label) {
 			// static_assert(std::enable_if_t<std::declval(T == U), std::true_type> && "Arguments are not comparable\n");
 			T loss{ 0 };
@@ -197,10 +357,99 @@ namespace nn {
 			return out;
 		}
 
+		template<typename T>
+		std::vector<T> categorical_cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+			assert(labels.size() == in.size() && "Dimensions do not match");
+			std::vector<T> out(in.size(), T{ 0 });
+			std::transform(in.cbegin(), in.cend(),
+				labels.cbegin(),
+				out.begin(),
+				[](auto lhs, auto rhs) {return rhs * std::log(lhs); });
+			T loss = std::accumulate(out.begin(), out.end(), T{ 0 });
+			return std::vector<T>{loss};
+		}
+
+		template <typename T>
+		matrices::Matrix<T> categorical_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
+			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
+			matrices::Matrix<T> out{ in.get_row_num(), 1 };
+			for (std::size_t i = 0; i < in.get_row_num(); ++i) {
+				auto cur_row_probs = in.get_row(i);
+				auto cur_row_labels = labels.get_row(i);
+				auto cur_loss = categorical_cross_entropy<T>(cur_row_probs, cur_row_labels);
+				out.set_row(i, cur_loss);
+			}
+			return out;
+		}
+
+		template<typename T>
+		std::vector<T> d_categorical_cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+			assert(labels.size() == in.size() && "Dimensions do not match");
+			std::vector<T> d_in(in.size(), T{ 0 });
+			std::transform(in.cbegin(), in.cend(),
+				labels.cbegin(),
+				d_in.begin(),
+				[](auto lhs, auto rhs) {return lhs - rhs; });
+			return d_in;
+		}
+
+		template <typename T>
+		matrices::Matrix<T> d_categorical_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
+			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
+			matrices::Matrix<T> out{ in.get_row_num(), in.get_col_num() };
+			for (std::size_t i = 0; i < in.get_row_num(); ++i) {
+				auto cur_row_probs = in.get_row(i);
+				auto cur_row_labels = labels.get_row(i);
+				auto cur_loss = d_categorical_cross_entropy<T>(cur_row_probs, cur_row_labels);
+				out.set_row(i, cur_loss);
+			}
+			return out;
+		}
+		////////////// loss functions ////////////
+
 	} // namespace util
 
+	template<typename T>
 	struct Loss {
-		;
+		static_assert(std::is_floating_point_v<T> && "Type must be floating point");
+		std::string m_loss_cat;
+		matrices::Matrix<T>(*m_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<int> const&);
+		matrices::Matrix<T>(*m_d_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<int> const&);
+		Loss(std::string const& loss_cat = "cross_entropy") {
+			m_loss_cat = loss_cat;
+			if (m_loss_cat.compare("cross_entropy") == 0) {
+				m_loss_fn = &util::cross_entropy<double>;
+				m_d_loss_fn = &util::d_cross_entropy<double>;
+			}
+			else if (m_loss_cat.compare("categorical_cross_entropy") == 0) {
+				m_loss_fn = &util::categorical_cross_entropy<double>;
+				m_d_loss_fn = &util::d_categorical_cross_entropy<double>;
+			}
+			else {
+				assert(0 && "Loss function name is not recognized");
+			}
+		}
+		matrices::Matrix<T> operator()(matrices::Matrix<T> const& probs, matrices::Matrix<int> const& labels) {
+			return m_loss_fn(probs, labels);
+		}
+		matrices::Matrix<T> backward(matrices::Matrix<T> const& probs, matrices::Matrix<int> const& labels) {
+			return m_d_loss_fn(probs, labels);
+		}
+	};
+
+	struct Optimizer {
+		std::string m_optimizer_cat;
+		Optimizer(std::string const& optimizer_cat = "sgd") {
+			m_optimizer_cat = optimizer_cat;
+			if (m_optimizer_cat.compare("sgd")) {
+				;
+			}
+			else {
+				assert(0, "optimization name is not recognized");
+			}
+		}
 	};
 
 	struct Linear {
@@ -237,6 +486,12 @@ namespace nn {
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
 				activation_cache = util::sigmoid<double>(z_cache);
+			}
+			else if (m_activation.compare("tanh") == 0) {
+				activation_cache = util::tanh<double>(z_cache);
+			}
+			else if (m_activation.compare("softmax") == 0) {
+				activation_cache = util::softmax<double>(z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
@@ -276,6 +531,12 @@ namespace nn {
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
 				d_activation = util::d_sigmoid<double>(z_cache);
+			}
+			else if (m_activation.compare("tanh") == 0) {
+				d_activation = util::d_tanh<double>(z_cache);
+			}
+			else if (m_activation.compare("softmax") == 0) {
+				d_activation = util::d_softmax<double>(z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
@@ -318,10 +579,8 @@ namespace nn {
 		std::vector<std::string> m_activations{};
 		std::vector<Linear> m_steps{};
 		matrices::Matrix<double> m_input{};
-		matrices::Matrix<int> m_labels{};
-		matrices::Matrix<double> m_preds{};
-		matrices::Matrix<double>(*m_loss_fn)(matrices::Matrix<double> const&, matrices::Matrix<int> const&);
-		matrices::Matrix<double>(*m_d_loss_fn)(matrices::Matrix<double> const&, matrices::Matrix<int> const&);
+		matrices::Matrix<double> m_probs{};
+		Loss<double> loss_obj{};
 		matrices::Matrix<double> m_loss{};
 		std::string m_loss_cat{};
 		Model(int input_dim, std::vector<int> layers, std::vector<std::string> activations, std::string loss_cat="cross_entropy") {
@@ -335,34 +594,26 @@ namespace nn {
 				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i]);
 			}
 			m_loss_cat = loss_cat;
-			if (m_loss_cat.compare("cross_entropy") == 0) {
-				m_loss_fn = &util::cross_entropy<double>;
-				m_d_loss_fn = &util::d_cross_entropy<double>;
-			}
-			else {
-				assert(0 && "No valid loss function");
-			}
+			loss_obj = Loss<double>{ m_loss_cat };
 		}
-		matrices::Matrix<double> forward(matrices::Matrix<double> in, matrices::Matrix<int> labels, 
+		matrices::Matrix<double> forward(matrices::Matrix<double> in,
 			int start_step = 0, int print_on = 0) {
 			assert((start_step >= 0 && start_step < m_steps.size()) && "start step is not valid");
 			if (start_step == 0) {
 				m_input = in;
-				m_labels = labels;
 			}
 			for (std::size_t i = start_step; i!=m_steps.size(); ++i) {
 				in = m_steps[i].forward(in, print_on);
 			}
-			m_preds = in;
-			auto loss = m_loss_fn(in, labels);
-			m_loss = loss;
-			return m_preds;
+			m_probs = in;
+			// m_loss = loss_obj(m_probs, labels);
+			return m_probs;
 		};
 
-		matrices::Matrix<double> backward( int gradient_check = 0, int print_on = 0) {
-			std::vector<double> next_weigth_data(m_preds.get_col_num(), double{ 1 });
-			matrices::Matrix<double> next_weigth{ 1, m_preds.get_col_num(), next_weigth_data };
-			matrices::Matrix<double> d_err = m_d_loss_fn(m_preds, m_labels);
+		matrices::Matrix<double> backward( matrices::Matrix<int> labels, int gradient_check = 0, int print_on = 0) {
+			std::vector<double> next_weigth_data(m_probs.get_col_num(), double{ 1 });
+			matrices::Matrix<double> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
+			matrices::Matrix<double> d_err = loss_obj.backward(m_probs, labels);
 			for (int i = m_steps.size()-1; i != -1; --i) {
 				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].activation_cache;
 				d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
@@ -373,12 +624,12 @@ namespace nn {
 						auto temp = m_steps[i].m_weights.data[j];
 						
 						m_steps[i].m_weights.data[j] = temp + epsilon;
-						auto m_preds1 = forward(prev_activation, m_labels, i, 0);
-						auto loss1 = m_loss_fn(m_preds1, m_labels);
+						auto m_preds1 = forward(prev_activation, i, 0);
+						auto loss1 = loss_obj(m_preds1, labels);
 
 						m_steps[i].m_weights.data[j] = temp - epsilon;
-						auto m_preds2 = forward(prev_activation, m_labels, i, 0);
-						auto loss2 = m_loss_fn(m_preds2, m_labels);
+						auto m_preds2 = forward(prev_activation, i, 0);
+						auto loss2 = loss_obj(m_preds2, labels);
 
 					  // TODO: calc numeric gradient
 						auto mean_loss1 = util::get_mean(loss1);
@@ -394,12 +645,12 @@ namespace nn {
 						auto temp = m_steps[i].m_bias.data[j];
 
 						m_steps[i].m_bias.data[j] = temp + epsilon;
-						auto m_preds1 = forward(prev_activation, m_labels, i, 0);
-						auto loss1 = m_loss_fn(m_preds1, m_labels);
+						auto m_preds1 = forward(prev_activation, i, 0);
+						auto loss1 = loss_obj(m_preds1, labels);
 
 						m_steps[i].m_bias.data[j] = temp - epsilon;
-						auto m_preds2 = forward(prev_activation, m_labels, i, 0);
-						auto loss2 = m_loss_fn(m_preds2, m_labels);
+						auto m_preds2 = forward(prev_activation, i, 0);
+						auto loss2 = loss_obj(m_preds2, labels);
 
 						// TODO: calc numeric gradient
 						auto mean_loss1 = util::get_mean(loss1);
