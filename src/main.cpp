@@ -13,15 +13,18 @@ int main()
   time_wrapper::Timer timer{};
 
   double lr{ 0.01 };
-  std::vector<int> layers{ 10, 10, 1 };
-  std::vector<std::string> activations{ "relu", "tanh", "sigmoid" };
-  int input_dim = 100;
-  nn::Model nn_model{ input_dim, layers, activations, "cross_entropy" };
-  nn::Loss<double> loss_obj{ "cross_entropy" };
+  std::string loss_cat{ "categorical_cross_entropy" };
+  int category_num{ 2 };
+  std::string output_activation{ "softmax" };
+  std::vector<int> layers{ 10, 5, category_num };
+  std::vector<std::string> activations{ "relu", "tanh", output_activation };
+  int input_dim{ 100 };
+  nn::Model nn_model{ input_dim, layers, activations, loss_cat };
+  nn::Loss<double> loss_obj{ loss_cat };
   int print_every{ 25 };
-  int batch_size = 1;
-  int gradient_check{ 0 };
-  int train_data_num = 1000;
+  int batch_size{ 16 };
+  int gradient_check{ 1 };
+  int train_data_num{ 1000 };
   std::vector<double> train_data_vec(train_data_num * input_dim, double{ 0 });
   std::vector<int> train_labels_vec(train_data_num, int{ 0 });
   matrices::Matrix<double> train_data{ train_data_num, input_dim, train_data_vec };
@@ -35,8 +38,16 @@ int main()
     train_data.set_row(i, cur_train_data);
     train_labels.set_row(i, cur_label);
   }
-  // auto train_labels_onehot = nn::util::onehot_encode(train_labels);
-  auto train_labels_onehot = train_labels;
+  matrices::Matrix<int> train_labels_onehot;
+  if (category_num == 1) {
+    train_labels_onehot = train_labels;
+  }
+  else if(category_num == 2) {
+    train_labels_onehot = nn::util::onehot_encode(train_labels);
+  }
+  else {
+    assert(0 && "tran label generation doesnt support more than 2 category");
+  }
   for (int epoch = 0; epoch < 10; ++epoch) {
     int count{ 0 };
     for (int data_idx = batch_size; data_idx < train_data_num; data_idx+= batch_size) {

@@ -286,7 +286,7 @@ namespace nn {
 				auto cur_row = in.get_row(i);
 				auto cur_d_softmax = d_softmax<T>(cur_row);
 				for (std::size_t j = i; j < i + cur_d_softmax.get_row_num(); ++j) {
-					res.set_row(i, cur_row);
+					res.set_row(j, cur_row);
 				}
 			}
 			return res;
@@ -365,7 +365,7 @@ namespace nn {
 				labels.cbegin(),
 				out.begin(),
 				[](auto lhs, auto rhs) {return rhs * std::log(lhs); });
-			T loss = std::accumulate(out.begin(), out.end(), T{ 0 });
+			T loss = -1.0*std::accumulate(out.begin(), out.end(), T{ 0 });
 			return std::vector<T>{loss};
 		}
 
@@ -384,7 +384,7 @@ namespace nn {
 		}
 
 		template<typename T>
-		std::vector<T> d_categorical_cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+		std::vector<T> d_categorical_cross_entropy_with_softmax(std::vector<T> const& in, std::vector<int> const& labels) {
 			assert(labels.size() == in.size() && "Dimensions do not match");
 			std::vector<T> d_in(in.size(), T{ 0 });
 			std::transform(in.cbegin(), in.cend(),
@@ -395,14 +395,14 @@ namespace nn {
 		}
 
 		template <typename T>
-		matrices::Matrix<T> d_categorical_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+		matrices::Matrix<T> d_categorical_cross_entropy_with_softmax(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
 			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
 			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
 			matrices::Matrix<T> out{ in.get_row_num(), in.get_col_num() };
 			for (std::size_t i = 0; i < in.get_row_num(); ++i) {
 				auto cur_row_probs = in.get_row(i);
 				auto cur_row_labels = labels.get_row(i);
-				auto cur_loss = d_categorical_cross_entropy<T>(cur_row_probs, cur_row_labels);
+				auto cur_loss = d_categorical_cross_entropy_with_softmax<T>(cur_row_probs, cur_row_labels);
 				out.set_row(i, cur_loss);
 			}
 			return out;
@@ -425,7 +425,7 @@ namespace nn {
 			}
 			else if (m_loss_cat.compare("categorical_cross_entropy") == 0) {
 				m_loss_fn = &util::categorical_cross_entropy<double>;
-				m_d_loss_fn = &util::d_categorical_cross_entropy<double>;
+				m_d_loss_fn = &util::d_categorical_cross_entropy_with_softmax<double>;
 			}
 			else {
 				assert(0 && "Loss function name is not recognized");
@@ -477,6 +477,26 @@ namespace nn {
 			m_weights = matrices::Matrix<double>{ n_row, n_col, weight_data };
 			m_bias = matrices::Matrix<double>{ 1, n_col, bias_data };
 			m_activation = activation;
+		}
+
+		matrices::Matrix<double> get_d_activation() const {
+			matrices::Matrix<double> d_activation;
+			if (m_activation.compare("relu") == 0) {
+				d_activation = util::d_relu<double>(z_cache);
+			}
+			else if (m_activation.compare("sigmoid") == 0) {
+				d_activation = util::d_sigmoid<double>(z_cache);
+			}
+			else if (m_activation.compare("tanh") == 0) {
+				d_activation = util::d_tanh<double>(z_cache);
+			}
+			else if (m_activation.compare("softmax") == 0) {
+				d_activation = util::d_softmax<double>(z_cache);
+			}
+			else {
+				assert(0 && "Not a valid activation name");
+			}
+			return d_activation;
 		}
 
 		matrices::Matrix<double> forward(matrices::Matrix<double> const& in, int print_on=0) const {
@@ -541,6 +561,7 @@ namespace nn {
 			else {
 				assert(0 && "Not a valid activation name");
 			}
+			// auto d_bias_batch = matrices::mult(in, matrices::mult(next_weigth, d_activation));
 			auto d_bias_batch = matrices::mult(in, next_weigth.transpose()) * d_activation;
 			d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
 			int batch_size = d_bias_batch.get_row_num();
@@ -572,6 +593,39 @@ namespace nn {
 
 			return d_bias_batch;
 		}
+
+		matrices::Matrix<double> backward2(matrices::Matrix<double> const& d_bias_batch, matrices::Matrix<double>prev_activation,
+			int print_on = 0) {
+			matrices::Matrix<double> out;
+			// auto d_bias_batch = matrices::mult(in, next_weigth.transpose()) * d_activation;
+			d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
+			int batch_size = d_bias_batch.get_row_num();
+			d_bias = util::get_mean(d_bias_batch);
+			d_weights = d_weights / batch_size;
+			auto prev_d_err = matrices::mult(d_bias_batch, m_weights.transpose());
+
+			if (print_on) {
+				auto d_activation = get_d_activation();
+				std::string opt_str = "d_activation row num: " + std::to_string(d_activation.get_row_num());
+				opt_str += " col num: " + std::to_string(d_activation.get_col_num());
+				opt_str += "\ndata: ";
+				matrices::util::print_elements(d_activation.data, " ", opt_str);
+
+				std::string opt_str2 = "d_bias row num: " + std::to_string(d_bias.get_row_num());
+				opt_str2 += " col num: " + std::to_string(d_bias.get_col_num());
+				opt_str2 += "\ndata: ";
+				matrices::util::print_elements(d_bias.data, " ", opt_str2);
+
+				std::string opt_str3 = "d_weights row num: " + std::to_string(d_weights.get_row_num());
+				opt_str3 += " col num: " + std::to_string(d_weights.get_col_num());
+				opt_str3 += "\ndata: ";
+				matrices::util::print_elements(d_weights.data, " ", opt_str3);
+
+			}
+
+			return prev_d_err;
+		}
+
 	};
 
 	struct Model {
@@ -611,16 +665,35 @@ namespace nn {
 		};
 
 		matrices::Matrix<double> backward( matrices::Matrix<int> labels, int gradient_check = 0, int print_on = 0) {
+			matrices::Matrix<double> d_bias_batch;
+			matrices::Matrix<double> d_err;
+			if (m_loss_cat.compare("cross_entropy") == 0) {
+				d_err = loss_obj.backward(m_probs, labels); 
+				d_bias_batch = d_err * m_steps.back().get_d_activation();
+			}
+			else if (m_loss_cat.compare("categorical_cross_entropy") == 0) {
+				assert(m_steps.back().m_activation.compare("softmax") == 0 && "Derivative implemented only for softmax+categorical_cross_entropy");
+				d_bias_batch = loss_obj.backward(m_probs, labels);
+			}
+			else {
+				assert(0 && "Loss function is not known");
+			}
 			std::vector<double> next_weigth_data(m_probs.get_col_num(), double{ 1 });
 			matrices::Matrix<double> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
-			matrices::Matrix<double> d_err = loss_obj.backward(m_probs, labels);
 			for (int i = m_steps.size()-1; i != -1; --i) {
 				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].activation_cache;
-				d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
+				// d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
+				d_err = m_steps[i].backward2(d_bias_batch, prev_activation, print_on);
+				if (i > 0) {
+					d_bias_batch = d_err * m_steps[i - 1].get_d_activation();
+				}
 				next_weigth = m_steps[i].m_weights;
 				if (gradient_check) {
 					double epsilon = { 0.001 };
 					for (std::size_t j = 0; j < m_steps[i].m_weights.data.size(); ++j) {
+						if (i == 0 && j == 19) {
+							std::cout << "for debugging\n";
+						}
 						auto temp = m_steps[i].m_weights.data[j];
 						
 						m_steps[i].m_weights.data[j] = temp + epsilon;
@@ -638,8 +711,9 @@ namespace nn {
 
 						m_steps[i].m_weights.data[j] = temp;
 						auto diff = std::abs(cur_grad - m_steps[i].d_weights.data[j]);
-						std::cout << "diff btw gradients " << std::to_string(diff) << "\n";
-						assert(diff < 0.001 && "numerical gradient doesnt match");
+						std::cout << "diff btw gradients " << std::to_string(diff) << ", layer:" << std::to_string(i);
+						std::cout << ", idx:" << std::to_string(j) << "/" << std::to_string(m_steps[i].m_weights.data.size()) << "\n";
+						assert(diff < 1e-7 && "numerical gradient doesnt match");
 					}
 					for (std::size_t j = 0; j < m_steps[i].m_bias.data.size(); ++j) {
 						auto temp = m_steps[i].m_bias.data[j];
@@ -659,12 +733,13 @@ namespace nn {
 
 						m_steps[i].m_bias.data[j] = temp;
 						auto diff = std::abs(cur_grad - m_steps[i].d_bias.data[j]);
-						std::cout << "diff btw gradients " << std::to_string(diff) << "\n";
+						std::cout << "diff btw gradients " << std::to_string(diff) << ", layer:" << std::to_string(i);
+						std::cout << ", idx:" << std::to_string(j) << "/" << std::to_string(m_steps[i].m_bias.data.size()) << "\n";
 						assert(diff < 1e-7 && "numerical gradient doesnt match");
 					}
 				}
 			}
-			return d_err;
+			return d_bias_batch;
 		};
 
 		void update(double learning_rate = 0.01) {
