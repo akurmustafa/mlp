@@ -7,7 +7,7 @@ Multi Layer Perceptron is implemented using c++ language and stl with no 3rd par
 You need to compile with at least c++17 compiler. I haven't used platfrom specific library, with a decent compiler you should be fine.
 
 ## API
-TODO: add usage of the Model class
+TODO: add example usage of the Model class here
 
 ### Prerequisites
 
@@ -15,8 +15,8 @@ Compiler should support C++17
 
 ## TODO
 
-Add dropout, allow type cconversion between different integral and different floating point types during initialization,
-add different initialization methods for weights and biases.
+Add dropout, allow type conversion between different integral and different floating point types during initialization,
+add different initialization methods for weights and biases. Change Model initialization api
 
 ## Contributing
 
