@@ -13,6 +13,23 @@ namespace nn {
 	namespace util {
 
 		template<typename T, typename D>
+		std::pair<matrices::Matrix<T>, matrices::Matrix<D>> shuffle(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs type must be integral");
+			static_assert(std::is_floating_point_v<T>, "lhs must have floating point type");
+			assert(in.get_row_num() == labels.get_row_num() && "row nums should be same");
+			matrices::Matrix<T> res{ in.get_row_num(), in.get_col_num() };
+			matrices::Matrix<D> res_label{ labels.get_row_num(), labels.get_col_num()};
+			std::vector<int> indices(in.get_row_num(), int{ 0 });
+			std::iota(indices.begin(), indices.end(), 0);
+			std::shuffle(indices.begin(), indices.end(), rand_wrapper::rng);
+			for (std::size_t i = 0; i < res.get_row_num(); ++i) {
+				res.set_row(i, in.get_row(indices[i]));
+				res_label.set_row(i, labels.get_row(indices[i]));
+			}
+			return std::pair{ res, res_label };
+		}
+
+		template<typename T, typename D>
 		matrices::Matrix<T> normalize_images(matrices::Matrix<D> const& in) {
 			static_assert(std::is_integral_v<D>, "type of rhs is not integral");
 			matrices::Matrix<T>res{ in.get_row_num(), in.get_col_num() };
@@ -497,6 +514,15 @@ namespace nn {
 				weight_data = rand_wrapper::randn(elem_num, mean, var);
 				bias_data = rand_wrapper::randn(n_col, mean, var);
 			}
+			else if (m_init_method.compare("uniform") == 0) {
+				double high = std::sqrt(1.0 / n_row);
+				double low = -1.0 * high;
+				weight_data = rand_wrapper::rand(elem_num, low, high);
+				bias_data = rand_wrapper::rand(n_col, low, high);
+			}
+			else {
+				assert(0 && "init method is not defined");
+			}
 			m_weights = matrices::Matrix<double>{ n_row, n_col, weight_data };
 			m_bias = matrices::Matrix<double>{ 1, n_col, bias_data };
 			m_activation = activation;
@@ -668,7 +694,7 @@ namespace nn {
 			m_activations = activations;
 			m_steps.resize(m_activations.size());
 			for (std::size_t i = 0; i < m_activations.size(); ++i) {
-				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i]);
+				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i], "uniform");
 			}
 			m_loss_cat = loss_cat;
 			loss_obj = Loss<double, std::uint8_t>{ m_loss_cat };
