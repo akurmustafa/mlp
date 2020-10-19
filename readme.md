@@ -15,7 +15,8 @@ Compiler should support C++17
 
 ## TODO
 
-Add training demo on mnist dataset, add tanh, softmax activation
+Add dropout, allow type cconversion between different integral and different floating point types during initialization,
+add different initialization methods for weights and biases.
 
 ## Contributing
 
