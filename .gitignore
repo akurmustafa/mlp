@@ -44,3 +44,7 @@ Release/
 
 # Test package
 packages/
+
+# mnist dataset zip, csv form
+mnist/mnist_csv/
+mnist/mnist_ubyte/

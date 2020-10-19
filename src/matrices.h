@@ -67,7 +67,7 @@ namespace matrices {
 
 		// constructor with vector data
 		template<typename T1>
-		Matrix(std::int64_t m, std::int64_t n, const std::vector<T1>& vec, int transpose = 0) : n_row(m), n_col(n) {
+		Matrix(std::int64_t m, std::int64_t n, std::vector<T1> const& vec, int transpose = 0) : n_row(m), n_col(n) {
 			// using X = decltype(std::declval<T>() +std::declval<T1>());
 			static_assert(std::is_assignable<std::vector<T>, std::vector<T1> const>::value, "Matrix type and Vector type are not assignable");
 			static_assert(std::is_assignable<T&, T1>::value, "Matrix type and Vector type are not assignable");

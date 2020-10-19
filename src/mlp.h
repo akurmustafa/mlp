@@ -12,13 +12,25 @@
 namespace nn {
 	namespace util {
 
-		matrices::Matrix<int> onehot_encode(matrices::Matrix<int> const& labels) {
+		template<typename T, typename D>
+		matrices::Matrix<T> normalize_images(matrices::Matrix<D> const& in) {
+			static_assert(std::is_integral_v<D>, "type of rhs is not integral");
+			matrices::Matrix<T>res{ in.get_row_num(), in.get_col_num() };
+			for (std::size_t i = 0; i < in.data.size(); ++i) {
+				res.data[i] = in.data[i] / 255.0;
+			}
+			return res;
+		}
+
+		template<typename T>
+		matrices::Matrix<T> onehot_encode(matrices::Matrix<T> const& labels) {
+			static_assert(std::is_integral_v<T>, "Type is not integral");
 			assert(labels.get_col_num() == 1 && "labels should be unique for onehot encoding");
 			auto max_elem_it = std::max_element(labels.data.cbegin(), labels.data.cend());
 			int diff_label_num = *max_elem_it + 1;
-			matrices::Matrix<int> res{ labels.get_row_num(), diff_label_num };
+			matrices::Matrix<T> res{ labels.get_row_num(), diff_label_num };
 			for (std::size_t i = 0; i < res.get_row_num(); ++i) {
-				std::vector<int> cur_row(diff_label_num, int{ 0 });
+				std::vector<T> cur_row(diff_label_num, int{ 0 });
 				cur_row[labels.data[i]] = 1;
 				res.set_row(i, cur_row);
 			}
@@ -27,11 +39,11 @@ namespace nn {
 
 		namespace detail {
 			// expects binary label
-			template<typename T>
-			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels, std::true_type) {
+			template<typename T, typename D>
+			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<D> labels, std::true_type) {
 				int tp{ 0 };
 				for (std::size_t i = 0; i != probs.get_row_num(); ++i) {
-					int cur_pred = probs.data[i] > 0.5 ? 1 : 0;
+					D cur_pred = probs.data[i] > 0.5 ? 1 : 0;
 					if (cur_pred == labels.data[i]) {
 						++tp;
 					}
@@ -40,8 +52,8 @@ namespace nn {
 			}
 
 			// expects onehot encoded vector as label
-			template<typename T>
-			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels, std::false_type) {
+			template<typename T, typename D>
+			double get_accuracy_impl(matrices::Matrix<T> const& probs, matrices::Matrix<D> labels, std::false_type) {
 				int tp{ 0 };
 				for (std::size_t i = 0; i != probs.get_row_num(); ++i) {
 					std::size_t offset = i * probs.get_col_num();
@@ -56,8 +68,9 @@ namespace nn {
 			}
 		} // namespace detail
 
-		template<typename T>
-		double get_accuracy(matrices::Matrix<T> const& probs, matrices::Matrix<int> labels) {
+		template<typename T, typename D>
+		double get_accuracy(matrices::Matrix<T> const& probs, matrices::Matrix<D> labels) {
+			static_assert(std::is_integral_v<D>, "rhs type is not integral");
 			assert((probs.get_col_num() && labels.get_col_num()) && "col nums should be same");
 			assert(probs.get_row_num() == labels.get_row_num() && "data nums should be same");
 			std::true_type t;
@@ -294,8 +307,9 @@ namespace nn {
 		////////////// activations ///////////////
 
 		////////////// loss functions ////////////
-		template<typename T>
-		T cross_entropy(T in, int label) {
+		template<typename T, typename D>
+		T cross_entropy(T in, D label) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			// static_assert(std::enable_if_t<std::declval(T == U), std::true_type> && "Arguments are not comparable\n");
 			T loss{ 0 };
 			if (label) {
@@ -307,8 +321,9 @@ namespace nn {
 			return loss;
 		}
 
-		template<typename T>
-		std::vector<T> cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+		template<typename T, typename D>
+		std::vector<T> cross_entropy(std::vector<T> const& in, std::vector<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(labels.size() == in.size() && "Dimensions do not match");
 			std::vector<T> out(in.size(), T{ 0 });
 			auto it_out = std::begin(out);
@@ -319,8 +334,9 @@ namespace nn {
 			return out;
 		}
 
-		template <typename T>
-		matrices::Matrix<T> cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+		template <typename T, typename D>
+		matrices::Matrix<T> cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
 			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
 			auto out_data = cross_entropy<T>(in.data, labels.data);
@@ -328,16 +344,18 @@ namespace nn {
 			return out;
 		}
 
-		template<typename T>
-		T d_cross_entropy(T in, int label) {
+		template<typename T, typename D>
+		T d_cross_entropy(T in, D label) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			// static_assert(std::enable_if_t<std::declval(T == U), std::true_type> && "Arguments are not comparable\n");
 			T d_loss{ 0 };
 			d_loss = (in - label) / ((1.0 - in) * in);
 			return d_loss;
 		}
 
-		template<typename T>
-		std::vector<T> d_cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+		template<typename T, typename D>
+		std::vector<T> d_cross_entropy(std::vector<T> const& in, std::vector<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(labels.size() == in.size() && "Dimensions do not match");
 			std::vector<T> out(in.size(), T{ 0 });
 			auto it_out = std::begin(out);
@@ -348,8 +366,9 @@ namespace nn {
 			return out;
 		}
 
-		template <typename T>
-		matrices::Matrix<T> d_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+		template <typename T, typename D>
+		matrices::Matrix<T> d_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
 			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
 			auto out_data = d_cross_entropy<T>(in.data, labels.data);
@@ -357,8 +376,9 @@ namespace nn {
 			return out;
 		}
 
-		template<typename T>
-		std::vector<T> categorical_cross_entropy(std::vector<T> const& in, std::vector<int> const& labels) {
+		template<typename T, typename D>
+		std::vector<T> categorical_cross_entropy(std::vector<T> const& in, std::vector<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(labels.size() == in.size() && "Dimensions do not match");
 			std::vector<T> out(in.size(), T{ 0 });
 			std::transform(in.cbegin(), in.cend(),
@@ -369,8 +389,8 @@ namespace nn {
 			return std::vector<T>{loss};
 		}
 
-		template <typename T>
-		matrices::Matrix<T> categorical_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+		template <typename T, typename D>
+		matrices::Matrix<T> categorical_cross_entropy(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
 			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
 			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
 			matrices::Matrix<T> out{ in.get_row_num(), 1 };
@@ -383,8 +403,9 @@ namespace nn {
 			return out;
 		}
 
-		template<typename T>
-		std::vector<T> d_categorical_cross_entropy_with_softmax(std::vector<T> const& in, std::vector<int> const& labels) {
+		template<typename T, typename D>
+		std::vector<T> d_categorical_cross_entropy_with_softmax(std::vector<T> const& in, std::vector<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(labels.size() == in.size() && "Dimensions do not match");
 			std::vector<T> d_in(in.size(), T{ 0 });
 			std::transform(in.cbegin(), in.cend(),
@@ -394,8 +415,9 @@ namespace nn {
 			return d_in;
 		}
 
-		template <typename T>
-		matrices::Matrix<T> d_categorical_cross_entropy_with_softmax(matrices::Matrix<T> const& in, matrices::Matrix<int> const& labels) {
+		template <typename T, typename D>
+		matrices::Matrix<T> d_categorical_cross_entropy_with_softmax(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
+			static_assert(std::is_integral_v<D>, "rhs must be integral type");
 			assert(in.get_row_num() == labels.get_row_num() && "Dimensions do not match");
 			assert(in.get_col_num() == labels.get_col_num() && "Dimensions do not match");
 			matrices::Matrix<T> out{ in.get_row_num(), in.get_col_num() };
@@ -411,12 +433,13 @@ namespace nn {
 
 	} // namespace util
 
-	template<typename T>
+	template<typename T, typename D>
 	struct Loss {
-		static_assert(std::is_floating_point_v<T> && "Type must be floating point");
+		static_assert(std::is_floating_point_v<T> && "lhs must be floating point");
+		static_assert(std::is_integral_v<D>, "rhs must be integral type");
 		std::string m_loss_cat;
-		matrices::Matrix<T>(*m_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<int> const&);
-		matrices::Matrix<T>(*m_d_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<int> const&);
+		matrices::Matrix<T>(*m_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<D> const&);
+		matrices::Matrix<T>(*m_d_loss_fn)(matrices::Matrix<T> const&, matrices::Matrix<D> const&);
 		Loss(std::string const& loss_cat = "cross_entropy") {
 			m_loss_cat = loss_cat;
 			if (m_loss_cat.compare("cross_entropy") == 0) {
@@ -431,10 +454,10 @@ namespace nn {
 				assert(0 && "Loss function name is not recognized");
 			}
 		}
-		matrices::Matrix<T> operator()(matrices::Matrix<T> const& probs, matrices::Matrix<int> const& labels) {
+		matrices::Matrix<T> operator()(matrices::Matrix<T> const& probs, matrices::Matrix<D> const& labels) {
 			return m_loss_fn(probs, labels);
 		}
-		matrices::Matrix<T> backward(matrices::Matrix<T> const& probs, matrices::Matrix<int> const& labels) {
+		matrices::Matrix<T> backward(matrices::Matrix<T> const& probs, matrices::Matrix<D> const& labels) {
 			return m_d_loss_fn(probs, labels);
 		}
 	};
@@ -457,10 +480,10 @@ namespace nn {
 		matrices::Matrix<double> m_bias;
 		std::string m_activation{};
 		std::string m_init_method{};
-		mutable matrices::Matrix<double> z_cache;
-		mutable matrices::Matrix<double> activation_cache;
-		matrices::Matrix<double> d_bias;
-		matrices::Matrix<double> d_weights;
+		mutable matrices::Matrix<double> m_z_cache;
+		mutable matrices::Matrix<double> m_activation_cache;
+		matrices::Matrix<double> m_d_bias;
+		matrices::Matrix<double> m_d_weights;
 
 		Linear() {}
 		Linear(int n_row, int n_col, std::string const& activation="relu", std::string const& init_method="gaussian") {
@@ -482,16 +505,16 @@ namespace nn {
 		matrices::Matrix<double> get_d_activation() const {
 			matrices::Matrix<double> d_activation;
 			if (m_activation.compare("relu") == 0) {
-				d_activation = util::d_relu<double>(z_cache);
+				d_activation = util::d_relu<double>(m_z_cache);
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
-				d_activation = util::d_sigmoid<double>(z_cache);
+				d_activation = util::d_sigmoid<double>(m_z_cache);
 			}
 			else if (m_activation.compare("tanh") == 0) {
-				d_activation = util::d_tanh<double>(z_cache);
+				d_activation = util::d_tanh<double>(m_z_cache);
 			}
 			else if (m_activation.compare("softmax") == 0) {
-				d_activation = util::d_softmax<double>(z_cache);
+				d_activation = util::d_softmax<double>(m_z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
@@ -500,18 +523,18 @@ namespace nn {
 		}
 
 		matrices::Matrix<double> forward(matrices::Matrix<double> const& in, int print_on=0) const {
-			z_cache = matrices::mult(in, m_weights) + m_bias;
+			m_z_cache = matrices::mult(in, m_weights) + m_bias;
 			if (m_activation.compare("relu") == 0) {
-				activation_cache = util::relu<double>(z_cache);
+				m_activation_cache = util::relu<double>(m_z_cache);
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
-				activation_cache = util::sigmoid<double>(z_cache);
+				m_activation_cache = util::sigmoid<double>(m_z_cache);
 			}
 			else if (m_activation.compare("tanh") == 0) {
-				activation_cache = util::tanh<double>(z_cache);
+				m_activation_cache = util::tanh<double>(m_z_cache);
 			}
 			else if (m_activation.compare("softmax") == 0) {
-				activation_cache = util::softmax<double>(z_cache);
+				m_activation_cache = util::softmax<double>(m_z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
@@ -532,13 +555,13 @@ namespace nn {
 				opt_str3 += "\ndata: ";
 				matrices::util::print_elements(m_bias.data, " ", opt_str3);
 
-				std::string opt_str4 = "activation row num: " + std::to_string(activation_cache.get_row_num());
-				opt_str4 += " col num: " + std::to_string(activation_cache.get_col_num());
+				std::string opt_str4 = "activation row num: " + std::to_string(m_activation_cache.get_row_num());
+				opt_str4 += " col num: " + std::to_string(m_activation_cache.get_col_num());
 				opt_str4 += "\ndata: ";
-				matrices::util::print_elements(activation_cache.data, " ", opt_str4);
+				matrices::util::print_elements(m_activation_cache.data, " ", opt_str4);
 			}
 
-			return activation_cache;
+			return m_activation_cache;
 		}
 
 		matrices::Matrix<double> backward(matrices::Matrix<double> const& in, matrices::Matrix<double>prev_activation, 
@@ -547,26 +570,26 @@ namespace nn {
 			matrices::Matrix<double> out;
 			matrices::Matrix<double> d_activation;
 			if (m_activation.compare("relu") == 0) {
-				d_activation = util::d_relu<double>(z_cache);
+				d_activation = util::d_relu<double>(m_z_cache);
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
-				d_activation = util::d_sigmoid<double>(z_cache);
+				d_activation = util::d_sigmoid<double>(m_z_cache);
 			}
 			else if (m_activation.compare("tanh") == 0) {
-				d_activation = util::d_tanh<double>(z_cache);
+				d_activation = util::d_tanh<double>(m_z_cache);
 			}
 			else if (m_activation.compare("softmax") == 0) {
-				d_activation = util::d_softmax<double>(z_cache);
+				d_activation = util::d_softmax<double>(m_z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
 			}
 			// auto d_bias_batch = matrices::mult(in, matrices::mult(next_weigth, d_activation));
 			auto d_bias_batch = matrices::mult(in, next_weigth.transpose()) * d_activation;
-			d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
+			m_d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
 			int batch_size = d_bias_batch.get_row_num();
-			d_bias = util::get_mean(d_bias_batch);
-			d_weights = d_weights / batch_size;
+			m_d_bias = util::get_mean(d_bias_batch);
+			m_d_weights = m_d_weights / batch_size;
 
 			if (print_on) {
 				std::string opt_str = "d_activation row num: " + std::to_string(d_activation.get_row_num());
@@ -579,15 +602,15 @@ namespace nn {
 				opt_str += "\ndata: ";
 				matrices::util::print_elements(in.data, " ", opt_str1);
 
-				std::string opt_str2 = "d_bias row num: " + std::to_string(d_bias.get_row_num());
-				opt_str2 += " col num: " + std::to_string(d_bias.get_col_num());
+				std::string opt_str2 = "d_bias row num: " + std::to_string(m_d_bias.get_row_num());
+				opt_str2 += " col num: " + std::to_string(m_d_bias.get_col_num());
 				opt_str2 += "\ndata: ";
-				matrices::util::print_elements(d_bias.data, " ", opt_str2);
+				matrices::util::print_elements(m_d_bias.data, " ", opt_str2);
 
-				std::string opt_str3 = "d_weights row num: " + std::to_string(d_weights.get_row_num());
-				opt_str3 += " col num: " + std::to_string(d_weights.get_col_num());
+				std::string opt_str3 = "d_weights row num: " + std::to_string(m_d_weights.get_row_num());
+				opt_str3 += " col num: " + std::to_string(m_d_weights.get_col_num());
 				opt_str3 += "\ndata: ";
-				matrices::util::print_elements(d_weights.data, " ", opt_str3);
+				matrices::util::print_elements(m_d_weights.data, " ", opt_str3);
 
 			}
 
@@ -598,10 +621,10 @@ namespace nn {
 			int print_on = 0) {
 			matrices::Matrix<double> out;
 			// auto d_bias_batch = matrices::mult(in, next_weigth.transpose()) * d_activation;
-			d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
+			m_d_weights = matrices::mult(prev_activation.transpose(), d_bias_batch);
 			int batch_size = d_bias_batch.get_row_num();
-			d_bias = util::get_mean(d_bias_batch);
-			d_weights = d_weights / batch_size;
+			m_d_bias = util::get_mean(d_bias_batch);
+			m_d_weights = m_d_weights / batch_size;
 			auto prev_d_err = matrices::mult(d_bias_batch, m_weights.transpose());
 
 			if (print_on) {
@@ -611,15 +634,15 @@ namespace nn {
 				opt_str += "\ndata: ";
 				matrices::util::print_elements(d_activation.data, " ", opt_str);
 
-				std::string opt_str2 = "d_bias row num: " + std::to_string(d_bias.get_row_num());
-				opt_str2 += " col num: " + std::to_string(d_bias.get_col_num());
+				std::string opt_str2 = "d_bias row num: " + std::to_string(m_d_bias.get_row_num());
+				opt_str2 += " col num: " + std::to_string(m_d_bias.get_col_num());
 				opt_str2 += "\ndata: ";
-				matrices::util::print_elements(d_bias.data, " ", opt_str2);
+				matrices::util::print_elements(m_d_bias.data, " ", opt_str2);
 
-				std::string opt_str3 = "d_weights row num: " + std::to_string(d_weights.get_row_num());
-				opt_str3 += " col num: " + std::to_string(d_weights.get_col_num());
+				std::string opt_str3 = "d_weights row num: " + std::to_string(m_d_weights.get_row_num());
+				opt_str3 += " col num: " + std::to_string(m_d_weights.get_col_num());
 				opt_str3 += "\ndata: ";
-				matrices::util::print_elements(d_weights.data, " ", opt_str3);
+				matrices::util::print_elements(m_d_weights.data, " ", opt_str3);
 
 			}
 
@@ -634,7 +657,7 @@ namespace nn {
 		std::vector<Linear> m_steps{};
 		matrices::Matrix<double> m_input{};
 		matrices::Matrix<double> m_probs{};
-		Loss<double> loss_obj{};
+		Loss<double, std::uint8_t> loss_obj{};
 		matrices::Matrix<double> m_loss{};
 		std::string m_loss_cat{};
 		Model(int input_dim, std::vector<int> layers, std::vector<std::string> activations, std::string loss_cat="cross_entropy") {
@@ -648,7 +671,7 @@ namespace nn {
 				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i]);
 			}
 			m_loss_cat = loss_cat;
-			loss_obj = Loss<double>{ m_loss_cat };
+			loss_obj = Loss<double, std::uint8_t>{ m_loss_cat };
 		}
 		matrices::Matrix<double> forward(matrices::Matrix<double> in,
 			int start_step = 0, int print_on = 0) {
@@ -664,7 +687,9 @@ namespace nn {
 			return m_probs;
 		};
 
-		matrices::Matrix<double> backward( matrices::Matrix<int> labels, int gradient_check = 0, int print_on = 0) {
+		template<typename D>
+		matrices::Matrix<double> backward( matrices::Matrix<D> labels, int gradient_check = 0, int print_on = 0) {
+			static_assert(std::is_integral_v<D>, "label type is not integral");
 			matrices::Matrix<double> d_bias_batch;
 			matrices::Matrix<double> d_err;
 			if (m_loss_cat.compare("cross_entropy") == 0) {
@@ -681,7 +706,7 @@ namespace nn {
 			std::vector<double> next_weigth_data(m_probs.get_col_num(), double{ 1 });
 			matrices::Matrix<double> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
 			for (int i = m_steps.size()-1; i != -1; --i) {
-				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].activation_cache;
+				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].m_activation_cache;
 				// d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
 				d_err = m_steps[i].backward2(d_bias_batch, prev_activation, print_on);
 				if (i > 0) {
@@ -689,6 +714,7 @@ namespace nn {
 				}
 				next_weigth = m_steps[i].m_weights;
 				if (gradient_check) {
+					double err_thresh{ 1e-6 };
 					double epsilon = { 0.001 };
 					for (std::size_t j = 0; j < m_steps[i].m_weights.data.size(); ++j) {
 						if (i == 0 && j == 19) {
@@ -710,10 +736,10 @@ namespace nn {
 						auto cur_grad = (mean_loss1.data[0] - mean_loss2.data[0]) / (2 * epsilon);
 
 						m_steps[i].m_weights.data[j] = temp;
-						auto diff = std::abs(cur_grad - m_steps[i].d_weights.data[j]);
+						auto diff = std::abs(cur_grad - m_steps[i].m_d_weights.data[j]);
 						std::cout << "diff btw gradients " << std::to_string(diff) << ", layer:" << std::to_string(i);
 						std::cout << ", idx:" << std::to_string(j) << "/" << std::to_string(m_steps[i].m_weights.data.size()) << "\n";
-						assert(diff < 1e-7 && "numerical gradient doesnt match");
+						assert(diff < err_thresh && "numerical gradient doesnt match");
 					}
 					for (std::size_t j = 0; j < m_steps[i].m_bias.data.size(); ++j) {
 						auto temp = m_steps[i].m_bias.data[j];
@@ -732,10 +758,10 @@ namespace nn {
 						auto cur_grad = (mean_loss1.data[0] - mean_loss2.data[0]) / (2 * epsilon);
 
 						m_steps[i].m_bias.data[j] = temp;
-						auto diff = std::abs(cur_grad - m_steps[i].d_bias.data[j]);
+						auto diff = std::abs(cur_grad - m_steps[i].m_d_bias.data[j]);
 						std::cout << "diff btw gradients " << std::to_string(diff) << ", layer:" << std::to_string(i);
 						std::cout << ", idx:" << std::to_string(j) << "/" << std::to_string(m_steps[i].m_bias.data.size()) << "\n";
-						assert(diff < 1e-7 && "numerical gradient doesnt match");
+						assert(diff < err_thresh && "numerical gradient doesnt match");
 					}
 				}
 			}
@@ -744,8 +770,8 @@ namespace nn {
 
 		void update(double learning_rate = 0.01) {
 			for (std::size_t i = 0; i < m_steps.size(); ++i) {
-				m_steps[i].m_weights -= m_steps[i].d_weights * learning_rate;
-				m_steps[i].m_bias -= m_steps[i].d_bias * learning_rate;
+				m_steps[i].m_weights -= m_steps[i].m_d_weights * learning_rate;
+				m_steps[i].m_bias -= m_steps[i].m_d_bias * learning_rate;
 			}
 		}
 

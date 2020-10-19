@@ -197,7 +197,8 @@ read_bin_file(path, 5150, 100, 1000, 0, 3, 1) reads the portion of the data as b
 100------999
 Meaning end points are exclusive*/
 template<typename T>
-std::vector<std::vector<T>> read_bin_file(const std::string& file_path, int channel_num, int channel_start, int channel_end, int time_start_sec, int time_end_sec, int fs) {
+std::vector<std::vector<T>> read_bin_file(const std::string& file_path, int channel_num, int channel_start, int channel_end, int time_start_sec, int time_end_sec, 
+	int fs, int offset=0) {
 	assert((channel_start >= 0 && channel_end <= channel_num && channel_end>channel_start && time_end_sec > time_start_sec) && "Inputs are not valid!");
 	std::vector<std::vector<T>> res;
 	std::cout << res.size() << "\n";
@@ -206,7 +207,7 @@ std::vector<std::vector<T>> read_bin_file(const std::string& file_path, int chan
 		int col_num = channel_end - channel_start;
 		bin_file.seekg(0, std::ios::end);
 		const size_t num_elements = bin_file.tellg() / sizeof(T);
-		int64_t row_num = num_elements / channel_num;
+		int64_t row_num = (num_elements-offset) / channel_num;
 		std::cout << row_num << ", " << col_num << "\n";
     int64_t time_start = time_start_sec * fs;
     int64_t time_end = time_end_sec * fs;
@@ -218,7 +219,7 @@ std::vector<std::vector<T>> read_bin_file(const std::string& file_path, int chan
     int64_t min_val = row_num < time_end ? row_num : time_end;//min(row_num, time_end);
 		res = std::vector<std::vector<T>>(min_val - time_start, std::vector<T>(col_num, 0));
 		for (int64_t i = time_start; i < min_val; ++i) {
-			bin_file.seekg((channel_num*(i)+channel_start)*sizeof(T), std::ios::beg);
+			bin_file.seekg((channel_num*(i)+channel_start+offset)*sizeof(T), std::ios::beg);
 			std::vector<T> data(col_num);
 			bin_file.read(reinterpret_cast<char*>(&data[0]), col_num*sizeof(T));
 			res[i-time_start] = data;
@@ -243,18 +244,19 @@ std::vector<std::vector<T>> read_bin_file(const std::string& file_path, int chan
 read_file(path, 5150, 100, 1000, 0, 3, 1) reads the portion of the data as below
 100------999, 100------999, 100------999   */
 template<typename T>
-std::vector<T> read_file(const std::string& file_path, int channel_num) {
+std::vector<T> read_file(const std::string& file_path, int channel_num, int offset=0) {
 	std::vector<T> res;
 	std::ifstream bin_file(file_path, std::ios::in | std::ios::binary | std::ios::beg);
 	int i{ 0 }; int j{ 0 };
 	if (bin_file.is_open()) {
 		bin_file.seekg(0, std::ios::end);
 		const size_t num_elements = bin_file.tellg() / sizeof(T);
-    int64_t row_num = num_elements / channel_num;
+		const size_t num_elements_asked = num_elements - offset;
+    int64_t row_num = num_elements_asked / channel_num;
 		std::cout << row_num << ", " << channel_num << "\n";
-		bin_file.seekg(0, std::ios::beg);
-		std::vector<T> data(num_elements);
-		bin_file.read(reinterpret_cast<char*>(&data[0]), num_elements*sizeof(T));
+		bin_file.seekg(offset, std::ios::beg);
+		std::vector<T> data(num_elements_asked, T{ 0 });
+		bin_file.read(reinterpret_cast<char*>(&data[0]), num_elements_asked * sizeof(T));
 		std::cout << "Entire file content is in memory\n";
 		return data;
 		bin_file.close();
