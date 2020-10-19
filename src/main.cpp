@@ -15,7 +15,8 @@
 int main()
 {
   time_wrapper::Timer timer{};
-  auto rng = std::default_random_engine{};
+
+  // auto rng = std::default_random_engine{};
 
   std::string dataset_folder_path{ "./mnist/" };
   auto train_data_vec = io::read_file<std::uint8_t>(dataset_folder_path + "train-images.idx3-ubyte", 784, 16);
@@ -99,12 +100,17 @@ int main()
 
 
   for (int epoch = 0; epoch < 10; ++epoch) {
+    auto res_pair = nn::util::shuffle(train_data_norm, train_data_labels_onehot);
+    auto train_data_norm_shuffled = res_pair.first;
+    auto train_data_labels_onehot_shuffled = res_pair.second;
+    // auto train_data_norm_shuffled = train_data_norm;
+    // auto train_data_labels_onehot_shuffled = train_data_labels_onehot;
     int count{ 0 };
     for (int data_idx = batch_size; data_idx < train_data_num; data_idx+= batch_size) {
       int row_start_idx = data_idx - batch_size;
-      auto cur_input = train_data_norm.get_row_btw(row_start_idx, data_idx);
+      auto cur_input = train_data_norm_shuffled.get_row_btw(row_start_idx, data_idx);
       auto probs = nn_model.forward(cur_input);
-      auto cur_label = train_data_labels_onehot.get_row_btw(row_start_idx, data_idx);
+      auto cur_label = train_data_labels_onehot_shuffled.get_row_btw(row_start_idx, data_idx);
       nn_model.backward(cur_label, gradient_check);
       nn_model.update(lr);
 
@@ -112,7 +118,7 @@ int main()
         // auto cur_accuracy = nn::util::get_accuracy(probs, cur_label);
         std::vector<int> indices(test_data_num, int{ 0 });
         std::iota(indices.begin(), indices.end(), 0);
-        std::shuffle(indices.begin(), indices.end(), rng);
+        std::shuffle(indices.begin(), indices.end(), rand_wrapper::rng);
         int sub_sample_data_num = 100 < test_data_num ? 100 : test_data_num;
         matrices::Matrix<double> test_data_norm_sampled{ sub_sample_data_num, input_dim };
         matrices::Matrix<std::uint8_t> test_data_norm_labels_sampled{ sub_sample_data_num, category_num };
@@ -132,6 +138,15 @@ int main()
       ++count;
     }
   }
+
+  auto all_probs = nn_model.forward(test_data_norm);
+  auto cur_accuracy = nn::util::get_accuracy(all_probs, test_data_labels_onehot);
+  std::cout << "end of training accuracy: " << std::to_string(cur_accuracy) << "\n";
+  auto cur_loss = loss_obj(all_probs, test_data_labels_onehot);
+  auto cur_loss_mean = nn::util::get_mean(cur_loss);
+  std::string msg_str = "enf of training mean loss: ";
+  matrices::util::print_elements(cur_loss_mean.data, " ", msg_str);
+
 
   std::cout << timer;
 
