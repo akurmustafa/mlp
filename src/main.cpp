@@ -16,6 +16,10 @@ int main()
 {
   time_wrapper::Timer timer{};
 
+  std::vector<double> in_data{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 };
+  matrices::Matrix<double> in{ 1, 6, in_data };
+  nn::Dropout<double> dropout{ 0.5 };
+  auto out = dropout.forward(in);
   // auto rng = std::default_random_engine{};
 
   std::string dataset_folder_path{ "./mnist/" };
@@ -44,9 +48,10 @@ int main()
   int category_num{ 1 };
   std::string output_activation{ "sigmoid" };*/
   int input_dim{ 784 };
-  std::vector<int> layers{ 64, 32, category_num };
+  std::vector<int> layers{ 64, 64, category_num };
   std::vector<std::string> activations{ "relu", "relu", output_activation };
-  nn::Model nn_model{ input_dim, layers, activations, loss_cat };
+  std::vector<double> dropout_probs{ 0.5, 0.5, 0.0 };
+  nn::Model nn_model{ input_dim, layers, activations, dropout_probs, loss_cat };
   nn::Loss<double, std::uint8_t> loss_obj{ loss_cat };
   int print_every{ 25 };
   int batch_size{ 16 };
