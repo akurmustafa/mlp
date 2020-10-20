@@ -450,6 +450,48 @@ namespace nn {
 
 	} // namespace util
 
+	struct Layer {
+		Layer() {};
+
+	};
+
+	template<typename T>
+	struct Dropout {
+		static_assert(std::is_floating_point_v<T>, "type of dropout must be floating point type");
+		double m_dropout{};
+		double m_ratio{};
+		matrices::Matrix<T> m_activation_cache{};
+		matrices::Matrix<double> m_dropout_cache;
+		Dropout(double prob = 0.5) {
+			m_dropout = prob;
+			m_ratio = 1.0 / (1.0 - m_dropout);
+		}
+
+		matrices::Matrix<T> forward(matrices::Matrix<T> const& in, bool inference=false, bool init=true) {
+			matrices::Matrix<T> out{};
+			if (inference) {
+				out = in;
+			}
+			else {
+				if (init) {
+					m_dropout_cache = matrices::Matrix<T>{ in.get_row_num(), in.get_col_num() };
+					for (std::size_t i = 0; i < m_dropout_cache.data.size(); ++i) {
+						if (rand_wrapper::rand(0.0, 1.0) > m_dropout) {
+							m_dropout_cache.data[i] = 1;
+						}
+					}
+				}
+				out = in * m_dropout_cache * m_ratio;
+				m_activation_cache = out;
+			}
+			return out;
+		}
+
+		matrices::Matrix<T> backward(matrices::Matrix<T> const& in) {
+			return in * m_dropout_cache * m_ratio;
+		}
+	};
+
 	template<typename T, typename D>
 	struct Loss {
 		static_assert(std::is_floating_point_v<T> && "lhs must be floating point");
@@ -681,32 +723,37 @@ namespace nn {
 		std::vector<int> m_layers{};
 		std::vector<std::string> m_activations{};
 		std::vector<Linear> m_steps{};
+		std::vector<Dropout<double>> m_dropouts{};
 		matrices::Matrix<double> m_input{};
 		matrices::Matrix<double> m_probs{};
 		Loss<double, std::uint8_t> loss_obj{};
 		matrices::Matrix<double> m_loss{};
 		std::string m_loss_cat{};
-		Model(int input_dim, std::vector<int> layers, std::vector<std::string> activations, std::string loss_cat="cross_entropy") {
-			assert(layers.size() == activations.size() && "dimensions doesnt match");
+		Model(int input_dim, std::vector<int> layers, std::vector<std::string> activations, 
+			std::vector<double>dropout_probs, std::string loss_cat="cross_entropy") {
+			assert((layers.size() == activations.size()) && (layers.size() == dropout_probs.size()) && "dimensions doesnt match");
 			m_layers.resize(layers.size()+1);
 			m_layers[0] = input_dim;
 			std::copy(layers.begin(), layers.end(), m_layers.begin() + 1);
 			m_activations = activations;
 			m_steps.resize(m_activations.size());
+			m_dropouts.resize(m_activations.size());
 			for (std::size_t i = 0; i < m_activations.size(); ++i) {
 				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i], "uniform");
+				m_dropouts[i] = Dropout<double>{ dropout_probs[i] };
 			}
 			m_loss_cat = loss_cat;
 			loss_obj = Loss<double, std::uint8_t>{ m_loss_cat };
 		}
 		matrices::Matrix<double> forward(matrices::Matrix<double> in,
-			int start_step = 0, int print_on = 0) {
+			int start_step = 0, int inference = 0, int init_dropout = 1, int print_on = 0) {
 			assert((start_step >= 0 && start_step < m_steps.size()) && "start step is not valid");
 			if (start_step == 0) {
 				m_input = in;
 			}
 			for (std::size_t i = start_step; i!=m_steps.size(); ++i) {
 				in = m_steps[i].forward(in, print_on);
+				in = m_dropouts[i].forward(in, inference, init_dropout);
 			}
 			m_probs = in;
 			// m_loss = loss_obj(m_probs, labels);
@@ -732,16 +779,21 @@ namespace nn {
 			std::vector<double> next_weigth_data(m_probs.get_col_num(), double{ 1 });
 			matrices::Matrix<double> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
 			for (int i = m_steps.size()-1; i != -1; --i) {
-				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].m_activation_cache;
+				// matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].m_activation_cache;
 				// d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
+				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_dropouts[i - 1].m_activation_cache;
 				d_err = m_steps[i].backward2(d_bias_batch, prev_activation, print_on);
 				if (i > 0) {
+					d_err = m_dropouts[i-1].backward(d_err);
 					d_bias_batch = d_err * m_steps[i - 1].get_d_activation();
 				}
 				next_weigth = m_steps[i].m_weights;
 				if (gradient_check) {
 					double err_thresh{ 1e-6 };
 					double epsilon = { 0.001 };
+					int inference{ 0 };
+					int init_dropout{ 0 };
+					int print_on{ 0 };
 					for (std::size_t j = 0; j < m_steps[i].m_weights.data.size(); ++j) {
 						if (i == 0 && j == 19) {
 							std::cout << "for debugging\n";
@@ -749,11 +801,11 @@ namespace nn {
 						auto temp = m_steps[i].m_weights.data[j];
 						
 						m_steps[i].m_weights.data[j] = temp + epsilon;
-						auto m_preds1 = forward(prev_activation, i, 0);
+						auto m_preds1 = forward(prev_activation, i, inference, init_dropout, print_on);
 						auto loss1 = loss_obj(m_preds1, labels);
 
 						m_steps[i].m_weights.data[j] = temp - epsilon;
-						auto m_preds2 = forward(prev_activation, i, 0);
+						auto m_preds2 = forward(prev_activation, i, inference, init_dropout, print_on);
 						auto loss2 = loss_obj(m_preds2, labels);
 
 					  // TODO: calc numeric gradient
@@ -771,11 +823,11 @@ namespace nn {
 						auto temp = m_steps[i].m_bias.data[j];
 
 						m_steps[i].m_bias.data[j] = temp + epsilon;
-						auto m_preds1 = forward(prev_activation, i, 0);
+						auto m_preds1 = forward(prev_activation, i, inference, init_dropout, print_on);
 						auto loss1 = loss_obj(m_preds1, labels);
 
 						m_steps[i].m_bias.data[j] = temp - epsilon;
-						auto m_preds2 = forward(prev_activation, i, 0);
+						auto m_preds2 = forward(prev_activation, i, inference, init_dropout, print_on);
 						auto loss2 = loss_obj(m_preds2, labels);
 
 						// TODO: calc numeric gradient
