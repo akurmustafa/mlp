@@ -150,7 +150,7 @@ namespace matrices {
 			std::vector<T> res_mat_data(new_row_num * n_col, T{ 0 });
 			std::copy(data.begin() + row_start_idx * n_col, data.begin() + (row_end_idx) * n_col,
 				res_mat_data.begin());
-			Matrix<T> res_mat{ new_row_num, n_col, res_mat_data };
+			Matrix<T> res_mat{ new_row_num, n_col, std::move(res_mat_data) };
 			return res_mat;
 		}
 
