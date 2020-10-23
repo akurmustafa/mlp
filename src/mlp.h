@@ -11,6 +11,24 @@
 
 namespace nn {
 	namespace util {
+		
+		template<typename T, typename D>
+		void shuffle_in_place(matrices::Matrix<T> & in, matrices::Matrix<D> & labels) {
+			static_assert(std::is_integral_v<D>, "rhs type must be integral");
+			static_assert(std::is_floating_point_v<T>, "lhs must have floating point type");
+			assert(in.get_row_num() == labels.get_row_num() && "row nums should be same");
+			matrices::Matrix<T> res{ in.get_row_num(), in.get_col_num() };
+			matrices::Matrix<D> res_label{ labels.get_row_num(), labels.get_col_num() };
+			std::vector<int> indices(in.get_row_num(), int{ 0 });
+			std::iota(indices.begin(), indices.end(), 0);
+			std::shuffle(indices.begin(), indices.end(), rand_wrapper::rng);
+			for (std::size_t i = 0; i < res.get_row_num(); ++i) {
+				res.set_row(i, in.get_row(indices[i]));
+				res_label.set_row(i, labels.get_row(indices[i]));
+			}
+			in = res;
+			labels = res_label;
+		}
 
 		template<typename T, typename D>
 		std::pair<matrices::Matrix<T>, matrices::Matrix<D>> shuffle(matrices::Matrix<T> const& in, matrices::Matrix<D> const& labels) {
@@ -502,12 +520,12 @@ namespace nn {
 		Loss(std::string const& loss_cat = "cross_entropy") {
 			m_loss_cat = loss_cat;
 			if (m_loss_cat.compare("cross_entropy") == 0) {
-				m_loss_fn = &util::cross_entropy<double>;
-				m_d_loss_fn = &util::d_cross_entropy<double>;
+				m_loss_fn = &util::cross_entropy<T>;
+				m_d_loss_fn = &util::d_cross_entropy<T>;
 			}
 			else if (m_loss_cat.compare("categorical_cross_entropy") == 0) {
-				m_loss_fn = &util::categorical_cross_entropy<double>;
-				m_d_loss_fn = &util::d_categorical_cross_entropy_with_softmax<double>;
+				m_loss_fn = &util::categorical_cross_entropy<T>;
+				m_d_loss_fn = &util::d_categorical_cross_entropy_with_softmax<T>;
 			}
 			else {
 				assert(0 && "Loss function name is not recognized");
@@ -590,19 +608,21 @@ namespace nn {
 			return d_activation;
 		}
 
-		matrices::Matrix<double> forward(matrices::Matrix<double> const& in, int print_on=0) const {
+		template<typename T>
+		matrices::Matrix<T> forward(matrices::Matrix<T> const& in, int print_on=0) const {
+			static_assert(std::is_floating_point_v<T>, "Type of input must be floating point type");
 			m_z_cache = matrices::mult(in, m_weights) + m_bias;
 			if (m_activation.compare("relu") == 0) {
-				m_activation_cache = util::relu<double>(m_z_cache);
+				m_activation_cache = util::relu<T>(m_z_cache);
 			}
 			else if (m_activation.compare("sigmoid") == 0) {
-				m_activation_cache = util::sigmoid<double>(m_z_cache);
+				m_activation_cache = util::sigmoid<T>(m_z_cache);
 			}
 			else if (m_activation.compare("tanh") == 0) {
-				m_activation_cache = util::tanh<double>(m_z_cache);
+				m_activation_cache = util::tanh<T>(m_z_cache);
 			}
 			else if (m_activation.compare("softmax") == 0) {
-				m_activation_cache = util::softmax<double>(m_z_cache);
+				m_activation_cache = util::softmax<T>(m_z_cache);
 			}
 			else {
 				assert(0 && "Not a valid activation name");
@@ -719,18 +739,19 @@ namespace nn {
 
 	};
 
+	template<typename D>
 	struct Model {
 		std::vector<int> m_layers{};
 		std::vector<std::string> m_activations{};
 		std::vector<Linear> m_steps{};
-		std::vector<Dropout<double>> m_dropouts{};
-		matrices::Matrix<double> m_input{};
-		matrices::Matrix<double> m_probs{};
-		Loss<double, std::uint8_t> loss_obj{};
-		matrices::Matrix<double> m_loss{};
+		std::vector<Dropout<D>> m_dropouts{};
+		matrices::Matrix<D> m_input{};
+		matrices::Matrix<D> m_probs{};
+		Loss<D, std::uint8_t> loss_obj{};
+		matrices::Matrix<D> m_loss{};
 		std::string m_loss_cat{};
 		Model(int input_dim, std::vector<int> layers, std::vector<std::string> activations, 
-			std::vector<double>dropout_probs, std::string loss_cat="cross_entropy") {
+			std::vector<D>dropout_probs, std::string loss_cat="cross_entropy") {
 			assert((layers.size() == activations.size()) && (layers.size() == dropout_probs.size()) && "dimensions doesnt match");
 			m_layers.resize(layers.size()+1);
 			m_layers[0] = input_dim;
@@ -740,12 +761,14 @@ namespace nn {
 			m_dropouts.resize(m_activations.size());
 			for (std::size_t i = 0; i < m_activations.size(); ++i) {
 				m_steps[i] = Linear(m_layers[i], m_layers[i + 1], m_activations[i], "uniform");
-				m_dropouts[i] = Dropout<double>{ dropout_probs[i] };
+				m_dropouts[i] = Dropout<D>{ dropout_probs[i] };
 			}
 			m_loss_cat = loss_cat;
-			loss_obj = Loss<double, std::uint8_t>{ m_loss_cat };
+			loss_obj = Loss<D, std::uint8_t>{ m_loss_cat };
 		}
-		matrices::Matrix<double> forward(matrices::Matrix<double> in,
+
+		template<typename T>
+		matrices::Matrix<T> forward(matrices::Matrix<T> in,
 			int start_step = 0, int inference = 0, int init_dropout = 1, int print_on = 0) {
 			assert((start_step >= 0 && start_step < m_steps.size()) && "start step is not valid");
 			if (start_step == 0) {
@@ -760,11 +783,11 @@ namespace nn {
 			return m_probs;
 		};
 
-		template<typename D>
-		matrices::Matrix<double> backward( matrices::Matrix<D> labels, int gradient_check = 0, int print_on = 0) {
-			static_assert(std::is_integral_v<D>, "label type is not integral");
-			matrices::Matrix<double> d_bias_batch;
-			matrices::Matrix<double> d_err;
+		template<typename T>
+		matrices::Matrix<D> backward( matrices::Matrix<T> labels, int gradient_check = 0, int print_on = 0) {
+			static_assert(std::is_integral_v<T>, "label type is not integral");
+			matrices::Matrix<D> d_bias_batch;
+			matrices::Matrix<D> d_err;
 			if (m_loss_cat.compare("cross_entropy") == 0) {
 				d_err = loss_obj.backward(m_probs, labels); 
 				d_bias_batch = d_err * m_steps.back().get_d_activation();
@@ -776,12 +799,12 @@ namespace nn {
 			else {
 				assert(0 && "Loss function is not known");
 			}
-			std::vector<double> next_weigth_data(m_probs.get_col_num(), double{ 1 });
-			matrices::Matrix<double> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
+			std::vector<D> next_weigth_data(m_probs.get_col_num(), D{ 1 });
+			matrices::Matrix<D> next_weigth{ 1, m_probs.get_col_num(), next_weigth_data };
 			for (int i = m_steps.size()-1; i != -1; --i) {
 				// matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_steps[i - 1].m_activation_cache;
 				// d_err = m_steps[i].backward(d_err, prev_activation, next_weigth, print_on);
-				matrices::Matrix<double> prev_activation = i == 0 ? m_input : m_dropouts[i - 1].m_activation_cache;
+				matrices::Matrix<D> prev_activation = i == 0 ? m_input : m_dropouts[i - 1].m_activation_cache;
 				d_err = m_steps[i].backward2(d_bias_batch, prev_activation, print_on);
 				if (i > 0) {
 					d_err = m_dropouts[i-1].backward(d_err);
