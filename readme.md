@@ -15,7 +15,7 @@ Compiler should support C++17
 
 ## TODO
 
-Add dropout, allow type conversion between different integral and different floating point types during initialization,
+Allow type conversion between different integral and different floating point types during initialization,
 add different initialization methods for weights and biases. Change Model initialization api
 
 ## Contributing
