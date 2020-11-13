@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <random>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
